@@ -18,7 +18,7 @@
  * Below are several constants used by the navigation system.
  * @todo Move these into TheNavMesh singleton.
  */
-const float GenerationStepSize = 25.0f;			// (30) was 20, but bots can't fit always fit
+const float GenerationStepSize = 16.0f;			// (30) was 20, but bots can't fit always fit
 const float JumpHeight = 41.8f;					// if delta Z is less than this, we can jump up on it
 const float JumpCrouchHeight = 64.0f;			// (48) if delta Z is less than or equal to this, we can jumpcrouch up on it
 
@@ -32,8 +32,9 @@ const float StepHeight = 18.0f;					// if delta Z is greater than this, we have 
 
 
 // TERROR: Increased DeathDrop from 200, since zombies don't take falling damage
-const float DeathDrop = 400.0f;					// (300) distance at which we will die if we fall - should be about 600, and pay attention to fall damage during pathfind
-const float ClimbUpHeight = 200.0f;				// height to check for climbing up
+const float DeathDrop = 200.0f;					// (300) distance at which we will die if we fall - should be about 600, and pay attention to fall damage during pathfind
+const float DeathDropInfected = 400.0f; // infected will consider this drop down, anything above DeathDrop will be flagged as COMMON_ONLY
+const float ClimbUpHeight = 200.0f;	// height to check for climbing up, anything above JumpCrouchHeight will be flagged as COMMON_ONLY
 const float CliffHeight = 300.0f;				// height which we consider a significant cliff which we would not want to fall off of
 
 // TERROR: Converted these values to use the same numbers as the player bounding boxes etc
@@ -92,6 +93,16 @@ enum NavAttributeType
 	NAV_MESH_NAV_BLOCKER	= 0x80000000				// area is blocked by nav blocker ( Alas, needed to hijack a bit in the attributes to get within a cache line [7/24/2008 tom])
 };
 
+enum NavConnectAttributeType
+{
+	NAV_CONNECT_FIRST_CUSTOM = 0x00010000,				// apps may define custom app-specific bits starting with this value
+
+	NAV_CONNECT_COMMONS_ONLY = 0x00010000,				// survivors and specials should not consider this nav connect as traversable - used for common infected climbs
+	NAV_CONNECT_INFECTED_ONLY = 0x00020000,
+	
+	NAV_CONNECT_LAST_CUSTOM = 0x04000000,				// apps must not define custom app-specific bits higher than with this value
+};
+
 extern NavAttributeType NameToNavAttribute( const char *name );
 
 enum NavDirType
@@ -144,6 +155,24 @@ enum NavRelativeDirType
 	DOWN,
 
 	NUM_RELATIVE_DIRECTIONS
+};
+
+//--------------------------------------------------------------------------------------------------------------
+/// Nav versions
+enum NavFileVersion
+{
+	NAV_VERSION_INITIAL = 1,
+	NAV_VERSION_ENCOUNTERS_DELETED = 3,
+	NAV_VERSION_BSP_SIZE_CHECK = 4,
+	NAV_VERSION_PLACES_ADDED = 5,
+	NAV_VERSION_LADDERS_ADDED = 7,
+	NAV_VERSION_EARLIEST_OCCUPY_TIME_ADDED = 8,
+	NAV_VERSION_SUBVERSION = 10,
+	NAV_VERSION_LIGHT_INTENSITY_ADDED = 11,
+	NAV_VERSION_EXTEND_ATTRIBUTES_INT = 13,
+	NAV_VERSION_STORE_ANALYSIS_STATUS = 14,
+	NAV_VERSION_POTENTIALLY_VISIBLE_ADDED = 16,
+	NAV_VERSION_CONNECTIONATTRIBUTES = 17,
 };
 
 struct Extent

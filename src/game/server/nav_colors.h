@@ -39,7 +39,9 @@ enum NavEditColor
 
 	// Connector colors
 	NavConnectedTwoWaysColor,
+	NavConnectedTwoWaysCommonOnlyColor,
 	NavConnectedOneWayColor,
+	NavConnectedOneWayCommonOnlyColor,
 	NavConnectedContiguous,
 	NavConnectedNonContiguous,
 

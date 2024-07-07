@@ -677,8 +677,9 @@ void CNavArea::OnDestroyNotify( CNavLadder *dead )
 /**
  * Connect this area to given area in given direction
  */
-void CNavArea::ConnectTo( CNavArea *area, NavDirType dir )
+void CNavArea::ConnectTo( CNavArea *area, NavDirType dir, const int& navConnectAttributes )
 {
+	// TODO: Ignoring the attributes. Remove them
 	// don't allow self-referential connections
 	if ( area == this )
 		return;
@@ -693,6 +694,21 @@ void CNavArea::ConnectTo( CNavArea *area, NavDirType dir )
 	NavConnect con;
 	con.area = area;
 	con.length = ( area->GetCenter() - GetCenter() ).Length();
+
+	int attributes = 0;
+	const float fromZ = GetCenter().z;
+	const float toZ = area->GetCenter().z;
+	if (toZ > fromZ && toZ - fromZ  > JumpCrouchHeight)
+	{
+		attributes |= NAV_CONNECT_COMMONS_ONLY;
+	}
+	if(fromZ > toZ && fromZ - toZ > DeathDrop)
+	{
+		attributes |= NAV_CONNECT_INFECTED_ONLY;
+	}
+
+	con.m_attributeFlags = attributes;
+
 	m_connect[ dir ].AddToTail( con );
 	m_incomingConnect[ dir ].FindAndRemove( con );
 
@@ -888,7 +904,7 @@ void CNavArea::MergeAdjacentConnections( CNavArea *adjArea )
 			NavConnect connect = adjArea->m_connect[ dir ][ it ];
 
 			if (connect.area != adjArea && connect.area != this)
-				ConnectTo( connect.area, (NavDirType)dir );
+				ConnectTo( connect.area, (NavDirType)dir, connect.m_attributeFlags );
 		}
 	}
 
@@ -912,6 +928,7 @@ void CNavArea::MergeAdjacentConnections( CNavArea *adjArea )
 		{
 			// check if there are any references to adjArea in this direction
 			bool connected = false;
+			int navConnectAttributes = 0;
 			FOR_EACH_VEC( area->m_connect[ dir ], cit )
 			{
 				NavConnect connect = area->m_connect[ dir ][ cit ];
@@ -919,6 +936,7 @@ void CNavArea::MergeAdjacentConnections( CNavArea *adjArea )
 				if (connect.area == adjArea)
 				{
 					connected = true;
+					navConnectAttributes = connect.m_attributeFlags;
 					break;
 				}
 			}
@@ -932,7 +950,7 @@ void CNavArea::MergeAdjacentConnections( CNavArea *adjArea )
 				area->Disconnect( this );
 
 				// add a single connection to the new area
-				area->ConnectTo( this, (NavDirType) dir );
+				area->ConnectTo( this, (NavDirType) dir, navConnectAttributes);
 			}
 		}
 	}
@@ -1165,7 +1183,7 @@ bool CNavArea::IsConnected( const CNavLadder *ladder, CNavLadder::LadderDirectio
  * if dir == NUM_DIRECTIONS, check all directions (direction is unknown)
  * @todo Formalize "asymmetric" flag on connections
  */
-bool CNavArea::IsConnected( const CNavArea *area, NavDirType dir ) const
+bool CNavArea::IsConnected( const CNavArea *area, NavDirType dir, int &navConnectAttributes ) const
 {
 	// we are connected to ourself
 	if (area == this)
@@ -1179,7 +1197,10 @@ bool CNavArea::IsConnected( const CNavArea *area, NavDirType dir ) const
 			FOR_EACH_VEC( m_connect[ d ], it )
 			{
 				if (area == m_connect[ d ][ it ].area)
+				{
+					navConnectAttributes = m_connect[d][it].m_attributeFlags;
 					return true;
+				}
 			}
 		}
 
@@ -1209,11 +1230,20 @@ bool CNavArea::IsConnected( const CNavArea *area, NavDirType dir ) const
 		FOR_EACH_VEC( m_connect[ dir ], it )
 		{
 			if (area == m_connect[ dir ][ it ].area)
+			{
+				navConnectAttributes = m_connect[ dir ][ it ].m_attributeFlags;
 				return true;
+			}
 		}
 	}
 
 	return false;
+}
+
+bool CNavArea::IsConnected(const CNavArea* area, NavDirType dir) const
+{
+	int connectionFlags;
+	return IsConnected(area, dir, connectionFlags);
 }
 
 //--------------------------------------------------------------------------------------------------------------
@@ -1258,6 +1288,26 @@ void CNavArea::AddIncomingConnection( CNavArea *source, NavDirType incomingEdgeD
 		con.length = ( source->GetCenter() - GetCenter() ).Length();
 		m_incomingConnect[ incomingEdgeDir ].AddToTail( con );
 	}	
+}
+
+//--------------------------------------------------------------------------------------------------------------
+/**
+ * Returns the NavConnect attributes for a given connection
+ */
+bool CNavArea::GetConnectionAttributes(const CNavArea* area, NavDirType dir, int &navConnectAttributes) const
+{
+	FOR_EACH_VEC( m_connect[dir], it)
+	{
+		const NavConnect connect = m_connect[dir][it];
+
+		if(connect.area == area)
+		{
+			navConnectAttributes = connect.m_attributeFlags;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 
@@ -3210,10 +3260,23 @@ void CNavArea::DrawConnectedAreas( void ) const
 				}
 				else
 				{
-					if ( adj->IsConnected( this, OppositeDirection( dir ) ) )
-						NavDrawLine( from, drawTo, NavConnectedTwoWaysColor );
+					int navConnectAttributes = 0;
+					GetConnectionAttributes(adj, dir, navConnectAttributes);
+
+					int oppositeConnectAttributes;
+					if ( adj->IsConnected( this, OppositeDirection( dir ), oppositeConnectAttributes) )
+					{
+						navConnectAttributes |= oppositeConnectAttributes;
+						const bool hasCommonOnly = (navConnectAttributes & NAV_CONNECT_COMMONS_ONLY) == NAV_CONNECT_COMMONS_ONLY;
+						NavDrawLine(from, drawTo, hasCommonOnly ? NavConnectedTwoWaysCommonOnlyColor : NavConnectedTwoWaysColor);
+						NDebugOverlay::Text(from, UTIL_VarArgs("%d", navConnectAttributes), false, NDEBUG_PERSIST_TILL_NEXT_SERVER);
+					}
 					else
-						NavDrawLine( from, drawTo, NavConnectedOneWayColor );
+					{
+						const bool hasCommonOnly = (navConnectAttributes & NAV_CONNECT_COMMONS_ONLY) == NAV_CONNECT_COMMONS_ONLY;
+						NavDrawLine(from, drawTo, hasCommonOnly ? NavConnectedOneWayCommonOnlyColor : NavConnectedOneWayColor);
+						NDebugOverlay::Text(from, UTIL_VarArgs("%d", navConnectAttributes), false, NDEBUG_PERSIST_TILL_NEXT_SERVER);
+					}
 				}
 			}
 		}

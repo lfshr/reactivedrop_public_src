@@ -1858,7 +1858,6 @@ void CommandNavDisconnect( void )
 }
 static ConCommand nav_disconnect( "nav_disconnect", CommandNavDisconnect, "To disconnect two Areas, mark an Area, highlight a second Area, then invoke the disconnect command. This will remove all connections between the two Areas.", FCVAR_GAMEDLL | FCVAR_CHEAT );
 
-
 //--------------------------------------------------------------------------------------------------------------
 void CommandNavSplice( void )
 {
@@ -2505,7 +2504,6 @@ NavAttributeLookup TheNavAttributeTable[] =
 	{ NULL, NAV_MESH_INVALID }
 };
 
-
 /**
  * Can be used with any command that takes an attribute as its 2nd argument
  */
@@ -2608,6 +2606,26 @@ void NavEditMarkAttribute( const CCommand &args )
 }
 static ConCommand NavMarkAttribute( "nav_mark_attribute", NavEditMarkAttribute, "Set nav attribute for all areas in the selected set.", FCVAR_CHEAT, NavAttributeAutocomplete );
 
+void NavEditMarkConnectAttribute( const CCommand &args )
+{
+	if( args.ArgC() != 2 )
+	{
+		Msg("Usage: %s <attribute>\n", args[0]);
+		return;
+	}
+
+	// TODO: Make this a lookup
+
+	NavConnectAttributeType attribute;
+	if (args[1] == "COMMON_ONLY")
+	{
+		attribute = NAV_CONNECT_COMMONS_ONLY;
+	}
+	else if (args[1] == "INFECTED_ONLY")
+	{
+		attribute = NAV_CONNECT_INFECTED_ONLY;
+	}
+}
 
 /* IN PROGRESS:
 //--------------------------------------------------------------------------------------------------------------

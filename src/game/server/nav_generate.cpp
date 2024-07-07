@@ -29,8 +29,8 @@ static unsigned int blockedID[ MAX_BLOCKED_AREAS ];
 static int blockedIDCount = 0;
 static float lastMsgTime = 0.0f;
 
-bool TraceAdjacentNode( int depth, const Vector& start, const Vector& end, trace_t *trace, float zLimit = DeathDrop );
-bool StayOnFloor( trace_t *trace, float zLimit = DeathDrop );
+bool TraceAdjacentNode( int depth, const Vector& start, const Vector& end, trace_t *trace, float zLimit = DeathDropInfected);
+bool StayOnFloor( trace_t *trace, float zLimit = DeathDropInfected);
 
 ConVar nav_slope_limit( "nav_slope_limit", "0.7", FCVAR_CHEAT, "The ground unit normal's Z component must be greater than this for nav areas to be generated." );
 ConVar nav_slope_tolerance( "nav_slope_tolerance", "0.1", FCVAR_CHEAT, "The ground unit normal's Z component must be this close to the nav area's Z component to be generated." );
@@ -1579,7 +1579,7 @@ void CNavMesh::SquareUpAreas( void )
 
 
 //--------------------------------------------------------------------------------------------------------------
-static bool testStitchConnection( CNavArea *source, CNavArea *target, const Vector &sourcePos, const Vector &targetPos )
+static bool testStitchConnection( CNavArea *source, CNavArea *target, const Vector &sourcePos, const Vector &targetPos, int &navConnectAttributes )
 {
 	trace_t result;
 	Vector from( sourcePos );
@@ -1621,6 +1621,16 @@ static bool testStitchConnection( CNavArea *source, CNavArea *target, const Vect
 				if ( tr.fraction < 1.0f )
 				{
 					break;
+				}
+
+				if(end.z > start.z && end.z - start.z > JumpCrouchHeight)
+				{
+					navConnectAttributes |= NAV_CONNECT_COMMONS_ONLY;
+				}
+
+				if(end.z < start.z && start.z - end.z > DeathDrop)
+				{
+					navConnectAttributes |= NAV_CONNECT_INFECTED_ONLY;
 				}
 
 				success = true;
@@ -1702,7 +1712,7 @@ inline bool testJumpDown( const Vector *fromPos, const Vector *toPos )
 	float dz = fromPos->z - toPos->z;
 
 	// drop can't be too far, or too short (or nonexistant)
-	if (dz <= JumpCrouchHeight || dz >= DeathDrop)
+	if (dz <= JumpCrouchHeight || dz >= DeathDropInfected)
 		return false;
 
 	//
@@ -1759,16 +1769,24 @@ inline bool testJumpDown( const Vector *fromPos, const Vector *toPos )
 
 
 //--------------------------------------------------------------------------------------------------------------
-inline CNavArea *findJumpDownArea( const Vector *fromPos, NavDirType dir )
+inline CNavArea *findJumpDownArea( const Vector *fromPos, NavDirType dir, int& navConnectAttributes )
 {
 	Vector start( fromPos->x, fromPos->y, fromPos->z + HalfHumanHeight );
 	AddDirectionVector( &start, dir, GenerationStepSize/2.0f );
 
 	Vector toPos;
-	CNavArea *downArea = findFirstAreaInDirection( &start, dir, 4.0f * GenerationStepSize, DeathDrop, NULL, &toPos );
+	CNavArea *downArea = findFirstAreaInDirection( &start, dir, 4.0f * GenerationStepSize, DeathDropInfected, NULL, &toPos );
 
 	if (downArea && testJumpDown( fromPos, &toPos ))
+	{
+		// If we're above the death drop of survivors
+		if(fromPos->z - toPos.z > DeathDrop)
+		{
+			navConnectAttributes |= NAV_CONNECT_INFECTED_ONLY;
+		}
+
 		return downArea;
+	}
 
 	return NULL;
 }
@@ -1822,27 +1840,29 @@ void CNavMesh::StitchAreaIntoMesh( CNavArea *area, NavDirType dir, Functor &func
 		if ( targetArea && !func( targetArea ) )
 		{
 			targetPos.z = targetArea->GetZ( targetPos.x, targetPos.y ) + HalfHumanHeight;
-			
+			int outNavConnectAttributes = 0;
 			// outgoing connection
-			if ( testStitchConnection( area, targetArea, sourcePos, targetPos ) )
+			if ( testStitchConnection( area, targetArea, sourcePos, targetPos, outNavConnectAttributes) )
 			{
-				area->ConnectTo( targetArea, dir );
+				area->ConnectTo( targetArea, dir, outNavConnectAttributes );
 			}
-			
+
+			int navConnectAttributes = 0;
 			// incoming connection
-			if ( testStitchConnection( targetArea, area, targetPos, sourcePos ) )
+			if ( testStitchConnection( targetArea, area, targetPos, sourcePos, navConnectAttributes ) )
 			{
-				targetArea->ConnectTo( area, OppositeDirection( dir ) );
+				targetArea->ConnectTo( area, OppositeDirection( dir ), navConnectAttributes );
 			}
 		}
 		else
 		{
 			sourcePos.z -= HalfHumanHeight;
 			sourcePos.z += 1;
-			CNavArea *downArea = findJumpDownArea( &sourcePos, dir );
+			int navConnectAttributes = 0;
+			CNavArea *downArea = findJumpDownArea( &sourcePos, dir, navConnectAttributes);
 			if ( downArea && downArea != area && !func( downArea ) )
 			{
-				area->ConnectTo( downArea, dir );
+				area->ConnectTo( downArea, dir, navConnectAttributes );
 			}
 		}
 	}
@@ -1860,7 +1880,7 @@ inline bool CheckCliff( const Vector *fromPos, NavDirType dir, bool bExhaustive 
 
 	trace_t trace;
 	// trace a step in specified direction and see where we'd find up
-	if ( TraceAdjacentNode( 0, *fromPos, toPos, &trace, DeathDrop * 10 ) && !trace.allsolid && !trace.startsolid )
+	if ( TraceAdjacentNode( 0, *fromPos, toPos, &trace, DeathDropInfected * 10 ) && !trace.allsolid && !trace.startsolid )
 	{
 		float deltaZ = fromPos->z - trace.endpos.z;
 		// would we fall off a cliff?
@@ -1881,7 +1901,6 @@ inline bool CheckCliff( const Vector *fromPos, NavDirType dir, bool bExhaustive 
 	return false;
 }
 
-
 //--------------------------------------------------------------------------------------------------------------
 /**
  * Define connections between adjacent generated areas
@@ -1893,6 +1912,7 @@ void CNavMesh::ConnectGeneratedAreas( void )
 	FOR_EACH_VEC( TheNavAreas, it )
 	{
 		CNavArea *area = TheNavAreas[ it ];
+		area->Draw(); 
 
 		// scan along edge nodes, stepping one node over into the next area
 		// for now, only use bi-directional connections
@@ -1905,13 +1925,25 @@ void CNavMesh::ConnectGeneratedAreas( void )
 
 			if (adj && adj->GetArea() && adj->GetConnectedNode( SOUTH ) == node )
 			{
-				area->ConnectTo( adj->GetArea(), NORTH );
+				int attributes = 0;
+				if(adj != NULL && adj->GetArea() != NULL && adj->GetArea()->GetZ(adj->GetPosition()) - node->GetArea()->GetZ(node->GetPosition()) > JumpCrouchHeight)
+				{
+					attributes |= NAV_CONNECT_COMMONS_ONLY;
+				}
+				if(adj != NULL && node->GetPosition()->z - adj->GetPosition()->z > DeathDrop)
+				{
+					attributes |= NAV_CONNECT_INFECTED_ONLY;
+				}
+				area->ConnectTo( adj->GetArea(), NORTH, attributes );
+				//NDebugOverlay::Line(area->GetCenter(), adj->GetArea()->GetCenter(), 0, 255, 0, true, 1.0f);
+				//NDebugOverlay::Text(area->GetCenter(), UTIL_VarArgs("N %d", attributes), true, 1.0f);
 			}
 			else
 			{
-				CNavArea *downArea = findJumpDownArea( node->GetPosition(), NORTH );
+				int navConnectAttributes = 0;
+				CNavArea *downArea = findJumpDownArea( node->GetPosition(), NORTH, navConnectAttributes);
 				if (downArea && downArea != area)
-					area->ConnectTo( downArea, NORTH );
+					area->ConnectTo( downArea, NORTH, navConnectAttributes);
 			}
 		}
 
@@ -1919,16 +1951,28 @@ void CNavMesh::ConnectGeneratedAreas( void )
 		for( node = area->m_node[ NORTH_WEST ]; node != area->m_node[ SOUTH_WEST ]; node = node->GetConnectedNode( SOUTH ) )
 		{
 			CNavNode *adj = node->GetConnectedNode( WEST );
+			int attributes = 0;
+			if (adj != NULL && adj->GetArea() != NULL && adj->GetArea()->GetZ(adj->GetPosition()) - node->GetArea()->GetZ(node->GetPosition()) > JumpCrouchHeight)
+			{
+				attributes |= NAV_CONNECT_COMMONS_ONLY;
+			}
+			if (adj != NULL && node->GetPosition()->z - adj->GetPosition()->z > DeathDrop)
+			{
+				attributes |= NAV_CONNECT_INFECTED_ONLY;
+			}
 			
 			if (adj && adj->GetArea() && adj->GetConnectedNode( EAST ) == node )
 			{
-				area->ConnectTo( adj->GetArea(), WEST );
+				area->ConnectTo( adj->GetArea(), WEST, attributes );
+				//NDebugOverlay::Line(area->GetCenter(), adj->GetArea()->GetCenter(), 0, 255, 0, true, 1.0f);
+				//NDebugOverlay::Text(area->GetCenter(), UTIL_VarArgs("W %d", attributes), true, 1.0f);
 			}
 			else
 			{
-				CNavArea *downArea = findJumpDownArea( node->GetPosition(), WEST );
+				int navConnectAttributes = 0;
+				CNavArea *downArea = findJumpDownArea( node->GetPosition(), WEST, navConnectAttributes);
 				if (downArea && downArea != area)
-					area->ConnectTo( downArea, WEST );
+					area->ConnectTo( downArea, WEST, navConnectAttributes );
 			}
 		}
 
@@ -1947,16 +1991,28 @@ void CNavMesh::ConnectGeneratedAreas( void )
 			for( ; node && node != end; node = node->GetConnectedNode( EAST ) )
 			{
 				CNavNode *adj = node->GetConnectedNode( SOUTH );
+				int attributes = 0;
+				if (adj != NULL && adj->GetArea() != NULL && adj->GetArea()->GetZ(adj->GetPosition()) - node->GetArea()->GetZ(node->GetPosition()) > JumpCrouchHeight)
+				{
+					attributes |= NAV_CONNECT_COMMONS_ONLY;
+				}
+				if (adj != NULL && node->GetPosition()->z - adj->GetPosition()->z > DeathDrop)
+				{
+					attributes |= NAV_CONNECT_INFECTED_ONLY;
+				}
 				
 				if (adj && adj->GetArea() && adj->GetConnectedNode( NORTH ) == node )
 				{
-					area->ConnectTo( adj->GetArea(), SOUTH );
+					area->ConnectTo( adj->GetArea(), SOUTH, attributes);
+					//NDebugOverlay::Line(area->GetCenter(), adj->GetArea()->GetCenter(), 0, 255, 0, true, 1.0f);
+					//NDebugOverlay::Text(area->GetCenter(), UTIL_VarArgs("S %d", attributes), true, 1.0f);
 				}
 				else
 				{
-					CNavArea *downArea = findJumpDownArea( node->GetPosition(), SOUTH );
+					int navConnectAttributes = 0;
+					CNavArea *downArea = findJumpDownArea( node->GetPosition(), SOUTH, navConnectAttributes );
 					if (downArea && downArea != area)
-						area->ConnectTo( downArea, SOUTH );
+						area->ConnectTo( downArea, SOUTH, navConnectAttributes);
 				}
 			}
 		}
@@ -1977,9 +2033,10 @@ void CNavMesh::ConnectGeneratedAreas( void )
 			// There was no area in between, presumably for good reason.  Only look for jump down links.
 			if ( !adj || !adj->GetArea() )
 			{
-				CNavArea *downArea = findJumpDownArea( node->GetPosition(), SOUTH );
+				int navConnectAttributes = 0;
+				CNavArea *downArea = findJumpDownArea( node->GetPosition(), SOUTH, navConnectAttributes );
 				if (downArea && downArea != area)
-					area->ConnectTo( downArea, SOUTH );
+					area->ConnectTo( downArea, SOUTH, navConnectAttributes);
 			}
 		}
 
@@ -1994,17 +2051,29 @@ void CNavMesh::ConnectGeneratedAreas( void )
 			CNavNode *end = area->m_node[ SOUTH_EAST ]->GetConnectedNode( WEST );
 			for( ; node && node != end; node = node->GetConnectedNode( SOUTH ) )
 			{
-				CNavNode *adj = node->GetConnectedNode( EAST );			
+				CNavNode *adj = node->GetConnectedNode( EAST );
+				int attributes = 0;
+				if (adj != NULL && adj->GetArea() != NULL && adj->GetArea()->GetZ(adj->GetPosition()) - node->GetArea()->GetZ(node->GetPosition()) > JumpCrouchHeight)
+				{
+					attributes |= NAV_CONNECT_COMMONS_ONLY;
+				}
+				if (adj != NULL && node->GetPosition()->z - adj->GetPosition()->z > DeathDrop)
+				{
+					attributes |= NAV_CONNECT_INFECTED_ONLY;
+				}
 
 				if (adj && adj->GetArea() && adj->GetConnectedNode( WEST ) == node )
 				{
-					area->ConnectTo( adj->GetArea(), EAST );
+					area->ConnectTo( adj->GetArea(), EAST, attributes);
+					//NDebugOverlay::Line(area->GetCenter(), adj->GetArea()->GetCenter(), 0, 255, 0, true, 1.0f);
+					//NDebugOverlay::Text(area->GetCenter(), UTIL_VarArgs("E %d", attributes), true, 1.0f);
 				}
 				else
 				{
-					CNavArea *downArea = findJumpDownArea( node->GetPosition(), EAST );
+					int navConnectAttributes = 0;
+					CNavArea *downArea = findJumpDownArea( node->GetPosition(), EAST, navConnectAttributes );
 					if (downArea && downArea != area)
-						area->ConnectTo( downArea, EAST );
+						area->ConnectTo( downArea, EAST, navConnectAttributes);
 				}
 			}
 		}
@@ -2025,9 +2094,10 @@ void CNavMesh::ConnectGeneratedAreas( void )
 			// There was no area in between, presumably for good reason.  Only look for jump down links.
 			if ( !adj || !adj->GetArea() )
 			{
-				CNavArea *downArea = findJumpDownArea( node->GetPosition(), EAST );
+				int navConnectAttributes = 0;
+				CNavArea *downArea = findJumpDownArea( node->GetPosition(), EAST, navConnectAttributes );
 				if (downArea && downArea != area)
-					area->ConnectTo( downArea, EAST );
+					area->ConnectTo( downArea, EAST, navConnectAttributes );
 			}
 		}
 	}
@@ -4103,7 +4173,7 @@ bool CNavMesh::FindGroundForNode( Vector *pos, Vector *normal )
 	trace_t tr;
 	Vector start( pos->x, pos->y, pos->z + VEC_DUCK_HULL_MAX.z - 0.1f );
 	Vector end( *pos );
-	end.z -= DeathDrop;
+	end.z -= DeathDropInfected;
 
 	UTIL_TraceHull(
 		start,

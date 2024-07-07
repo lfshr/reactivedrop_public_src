@@ -479,6 +479,9 @@ void CASW_Player::ItemPostFrame()
 #endif
 }
 
+#ifdef SERVER_DLL
+extern ConVar nav_mesh;
+#endif
 // the player's eyes go above the marine he's spectating/controlling
 Vector CASW_Player::EyePosition( )
 {
@@ -491,6 +494,15 @@ Vector CASW_Player::EyePosition( )
 	{
 		return BaseClass::EyePosition();
 	}
+
+#ifdef SERVER_DLL
+	// Fish: Disabled to allow nav edit
+	if(nav_edit.GetBool())
+	{
+		return BaseClass::EyePosition();
+	}
+#endif
+
 
 	CAlienSwarm *pGameRules = ASWGameRules();
 	if ( pGameRules && pGameRules->GetGameState() < ASW_GS_INGAME && pGameRules->m_hBriefingCamera )

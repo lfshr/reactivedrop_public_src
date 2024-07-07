@@ -119,6 +119,7 @@
 #include "IGameUIFuncs.h"
 #endif
 
+#include "nav_test.h"
 #include "winlite.h"
 #undef CreateEvent
 
@@ -604,6 +605,7 @@ static bool InitGameSystems( CreateInterfaceFn appSystemFactory )
 
 	// create the Navigation Mesh interface
 	TheNavMesh = NavMeshFactory();
+	TheNavTest = new CNavTest;
 
 	// init the gamestatsupload connection
 	gamestatsuploader->InitConnection();

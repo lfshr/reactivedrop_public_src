@@ -63,10 +63,11 @@ public:
  */
 struct NavConnect
 {
-	NavConnect()
+	NavConnect() :
+		id(0),
+		length(-1),
+		m_attributeFlags(0)
 	{
-		id = 0;
-		length = -1;
 	}
 
 	union
@@ -76,6 +77,7 @@ struct NavConnect
 	};
 
 	mutable float length;
+	int	m_attributeFlags;
 
 	bool operator==( const NavConnect &other ) const
 	{
@@ -281,7 +283,7 @@ public:
 	void Build( const Vector &corner, const Vector &otherCorner );
 	void Build( const Vector &nwCorner, const Vector &neCorner, const Vector &seCorner, const Vector &swCorner );
 
-	void ConnectTo( CNavArea *area, NavDirType dir );			// connect this area to given area in given direction
+	void ConnectTo( CNavArea *area, NavDirType dir, const int& navConnectAttributes = 0 );			// connect this area to given area in given direction
 	void Disconnect( CNavArea *area );							// disconnect this area from given area
 
 	void ConnectTo( CNavLadder *ladder );						// connect this area to given ladder
@@ -349,12 +351,14 @@ public:
 	CNavArea *GetRandomAdjacentArea( NavDirType dir ) const;
 
 	const NavConnectVector *GetAdjacentAreas( NavDirType dir ) const	{ return &m_connect[dir]; }
+	bool IsConnected(const CNavArea* area, NavDirType dir, int& navConnectAttributes) const; // return true if given area is connected in given direction with the connection flags
 	bool IsConnected( const CNavArea *area, NavDirType dir ) const;	// return true if given area is connected in given direction
 	bool IsConnected( const CNavLadder *ladder, CNavLadder::LadderDirectionType dir ) const;	// return true if given ladder is connected in given direction
 	float ComputeGroundHeightChange( const CNavArea *area );			// compute change in actual ground height from this area to given area
 
 	const NavConnectVector *GetIncomingConnections( NavDirType dir ) const	{ return &m_incomingConnect[dir]; }	// get areas connected TO this area by a ONE-WAY link (ie: we have no connection back to them)
 	void AddIncomingConnection( CNavArea *source, NavDirType incomingEdgeDir );
+	bool GetConnectionAttributes(const CNavArea* area, NavDirType dir, int& navConnectAttributes) const;
 
 	const NavLadderConnectVector *GetLadders( CNavLadder::LadderDirectionType dir ) const	{ return &m_ladder[dir]; }
 	CFuncElevator *GetElevator( void ) const												{ Assert( !( m_attributeFlags & NAV_MESH_HAS_ELEVATOR ) == (m_elevator == NULL) ); return ( m_attributeFlags & NAV_MESH_HAS_ELEVATOR ) ? m_elevator : NULL; }

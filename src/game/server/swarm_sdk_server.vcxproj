@@ -993,6 +993,10 @@ if exist ..\..\devtools\bin\postbuild.cmd ..\..\devtools\bin\postbuild.cmd serve
     <ClCompile Include="hl2\prop_combine_ball.cpp" />
     <ClCompile Include="hl2\script_intro.cpp" />
     <ClCompile Include="hl2\weapon_cguard.cpp" />
+    <ClCompile Include="nav_test.cpp" />
+    <ClCompile Include="nav_test.h">
+      <FileType>CppHeader</FileType>
+    </ClCompile>
     <ClCompile Include="serverhelper.cpp" />
     <ClCompile Include="gameinterface.cpp" />
     <ClCompile Include="GameStats_BasicStatsFunctions.cpp">

@@ -48,7 +48,9 @@ Color NavColors[] =
 
 	// Connector colors
 	Color( 0, 255, 255 ),		// NavConnectedTwoWaysColor
+	Color(255, 100, 100),			// NavConnectedTwoWaysCommonOnlyColor
 	Color( 0, 0, 255 ),			// NavConnectedOneWayColor
+	Color( 100, 255, 0 ),			// NavConnectedOneWayCommonOnlyColor
 	Color( 0, 255, 0 ),			// NavConnectedContiguous
 	Color( 255, 0, 0 ),			// NavConnectedNonContiguous
 

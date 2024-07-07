@@ -29,8 +29,10 @@
 
 /// IMPORTANT: If this version changes, the swap function in makegamedata 
 /// must be updated to match. If not, this will break the Xbox 360.
-// TODO: Was changed from 15, update when latest 360 code is integrated (MSB 5/5/09)
-const int NavCurrentVersion = 16;
+// Was changed from 15, update when latest 360 code is integrated (MSB 5/5/09)
+// Changed to 17 to support nav attribute changes (LF 03/07/24) TODO: Change makegamedata if necessary
+const int NavCurrentVersion = NAV_VERSION_CONNECTIONATTRIBUTES;
+const int NavVersionMinSupported = NAV_VERSION_BSP_SIZE_CHECK;
 
 //--------------------------------------------------------------------------------------------------------------
 //
@@ -245,8 +247,9 @@ void CNavArea::Save( CUtlBuffer &fileBuffer, unsigned int version ) const
 
 		FOR_EACH_VEC( m_connect[d], it )
 		{
-			NavConnect connect = m_connect[d][ it ];
+			const NavConnect connect = m_connect[d][ it ];
 			fileBuffer.PutUnsignedInt( connect.area->m_id );
+			fileBuffer.PutInt( connect.m_attributeFlags );
 		}
 	}
 
@@ -408,11 +411,11 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 		m_nextID = m_id+1;
 
 	// load attribute flags
-	if ( version <= 8 )
+	if ( version <= NAV_VERSION_EARLIEST_OCCUPY_TIME_ADDED )
 	{
 		m_attributeFlags = fileBuffer.GetUnsignedChar();
 	}
-	else if ( version < 13 )
+	else if ( version < NAV_VERSION_EXTEND_ATTRIBUTES_INT )
 	{
 		m_attributeFlags = fileBuffer.GetUnsignedShort();
 	}
@@ -461,6 +464,12 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 		{
 			NavConnect connect;
 			connect.id = fileBuffer.GetUnsignedInt();
+
+			if( version >= NAV_VERSION_CONNECTIONATTRIBUTES)
+			{
+				connect.m_attributeFlags = fileBuffer.GetInt();
+			}
+
 			Assert( fileBuffer.IsValid() );
 
 			// don't allow self-referential connections
@@ -478,7 +487,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 	// load number of hiding spots
 	unsigned char hidingSpotCount = fileBuffer.GetUnsignedChar();
 
-	if (version == 1)
+	if (version == NAV_VERSION_INITIAL)
 	{
 		// load simple vector array
 		Vector pos;
@@ -507,7 +516,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 		}
 	}
 
-	if ( version < 15 )
+	if ( version < NAV_VERSION_POTENTIALLY_VISIBLE_ADDED)
 	{
 		//
 		// Eat the approach areas
@@ -531,7 +540,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 	//
 	unsigned int count = fileBuffer.GetUnsignedInt();
 
-	if (version < 3)
+	if (version < NAV_VERSION_ENCOUNTERS_DELETED)
 	{
 		// old data, read and discard
 		for( unsigned int e=0; e<count; ++e )
@@ -590,7 +599,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 		m_spotEncounters.AddToTail( encounter );
 	}
 
-	if (version < 5)
+	if (version < NAV_VERSION_PLACES_ADDED)
 		return NAV_OK;
 
 	//
@@ -601,7 +610,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 	// convert entry to actual Place
 	SetPlace( placeDirectory.IndexToPlace( entry ) );
 
-	if ( version < 7 )
+	if ( version < NAV_VERSION_LADDERS_ADDED )
 		return NAV_OK;
 
 	// load ladder data
@@ -630,7 +639,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 		}
 	}
 
-	if ( version < 8 )
+	if ( version < NAV_VERSION_EARLIEST_OCCUPY_TIME_ADDED )
 		return NAV_OK;
 
 	// load earliest occupy times
@@ -640,7 +649,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 		m_earliestOccupyTime[i] = fileBuffer.GetFloat();
 	}
 
-	if ( version < 11 )
+	if ( version < NAV_VERSION_LIGHT_INTENSITY_ADDED )
 		return NAV_OK;
 
 	// load light intensity
@@ -649,7 +658,7 @@ NavErrorType CNavArea::Load( CUtlBuffer &fileBuffer, unsigned int version, unsig
 		m_lightIntensity[i] = fileBuffer.GetFloat();
 	}
 
-	if ( version < 16 )
+	if ( version < NAV_VERSION_POTENTIALLY_VISIBLE_ADDED )
 		return NAV_OK;
 
 	// load visibility information
@@ -1108,7 +1117,7 @@ static NavErrorType CheckNavFile( const char *bspFilename )
 	// read file version number
 	unsigned int version;
 	result = filesystem->Read( &version, sizeof(unsigned int), file );
-	if (!result || version > NavCurrentVersion || version < 4)
+	if (!result || version > NavCurrentVersion || version < NavVersionMinSupported)
 	{
 		filesystem->Close( file );
 		return NAV_BAD_FILE_VERSION;
@@ -1309,7 +1318,7 @@ NavErrorType CNavMesh::Load( void )
 	}
 	
 	unsigned int subVersion = 0;
-	if ( version >= 10 )
+	if ( version >= NAV_VERSION_SUBVERSION )
 	{
 		subVersion = fileBuffer.GetUnsignedInt();
 		if ( !fileBuffer.IsValid() )
@@ -1319,7 +1328,7 @@ NavErrorType CNavMesh::Load( void )
 		}
 	}
 
-	if ( version >= 4 )
+	if ( version >= NAV_VERSION_BSP_SIZE_CHECK )
 	{
 		// get size of source bsp file and verify that the bsp hasn't changed
 		unsigned int saveBspSize = fileBuffer.GetUnsignedInt();
@@ -1348,7 +1357,7 @@ NavErrorType CNavMesh::Load( void )
 		}
 	}
 
-	if ( version >= 14 )
+	if ( version >= NAV_VERSION_STORE_ANALYSIS_STATUS )
 	{
 		m_isAnalyzed = fileBuffer.GetUnsignedChar() != 0;
 	}
@@ -1358,7 +1367,7 @@ NavErrorType CNavMesh::Load( void )
 	}
 
 	// load Place directory
-	if ( version >= 5 )
+	if ( version >= NAV_VERSION_PLACES_ADDED )
 	{
 		placeDirectory.Load( fileBuffer, version );
 	}
@@ -1413,7 +1422,7 @@ NavErrorType CNavMesh::Load( void )
 	//
 	// Set up all the ladders
 	//
-	if (version >= 6)
+	if ( version >= NAV_VERSION_LADDERS_ADDED )
 	{
 		count = fileBuffer.GetUnsignedInt();
 		m_ladders.EnsureCapacity( count );
